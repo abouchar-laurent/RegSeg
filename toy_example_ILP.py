@@ -110,7 +110,7 @@ value = sr.solve_via_ILP(weights, max_gradient=1, enforce_minimum=False)
 wf = weights.reshape(np.prod(shape),column_height)
 
 print "solving second"
-value2 = sr.reconstruct_surface(noisy_distance,'/data/dump/tmp0.txt','/data/dump/tmp1.txt',os.path.join(ROOT_PATH,'src','cpp','graph_cut_Linux'),max_dist=max_dist,cost_fun='linear',overwrite=True,verbose=True)
+#~ value2 = sr.reconstruct_surface(noisy_distance,'/data/dump/tmp0.txt','/data/dump/tmp1.txt',os.path.join(ROOT_PATH,'src','cpp','graph_cut'),max_dist=max_dist,cost_fun='linear',overwrite=True,verbose=True)
 
 
 
@@ -119,7 +119,7 @@ print "Total Cost ILP without non-0 minima:", sum([w[v] for v,w in zip(value_m.f
 print "Total Cost basic Min-Cut:", sum([w[v] for v,w in zip(value2.flatten(),wf)])
 
 
-evaluate.compare_scores(ground_truth_distance, [value, value_m, value2], ['ILP','ILP with minima at 0 only','MinCut'])
+evaluate.compare_scores(ground_truth_distance, [value, value_m], ['ILP','ILP with minima at 0 only'])
 
 
 pl.subplot(2,3,1)
@@ -134,12 +134,12 @@ pl.title('ILP minima at 0 only')
 pl.subplot(2,3,4)
 pl.imshow(value,vmin=0,vmax=max_dist,interpolation='nearest')
 pl.title('ILP estimation')
-pl.subplot(2,3,5)
-pl.imshow(value2,vmin=0,vmax=max_dist,interpolation='nearest')
-pl.title('MinCut estimation')
+#~ pl.subplot(2,3,5)
+#~ pl.imshow(value2,vmin=0,vmax=max_dist,interpolation='nearest')
+#~ pl.title('MinCut estimation')
 pl.subplot(2,3,6)
-pl.imshow(value-value2,interpolation='nearest')
-pl.title('ILP estimation - MinCut estimation')
-print "Max gradient ILP:", np.maximum(np.max(np.diff(value,axis=0)),np.max(np.diff(value,axis=1))), ", Graph-Cut:", np.maximum(np.max(np.diff(value2,axis=0)),np.max(np.diff(value2,axis=1)))
+pl.imshow(value-value_m,interpolation='nearest')
+pl.title('ILP estimations difference')
+#~ print "Max gradient ILP:", np.maximum(np.max(np.diff(value,axis=0)),np.max(np.diff(value,axis=1))), ", Graph-Cut:", np.maximum(np.max(np.diff(value2,axis=0)),np.max(np.diff(value2,axis=1)))
 pl.show()
 
