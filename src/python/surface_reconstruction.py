@@ -600,8 +600,8 @@ def test(image, path_graph, path_output, C_prog, max_dist=None):
 
 def solve_via_ILP(weights, max_gradient=1, enforce_minimum=False, num_cores=None):
     try:
-        
-        sys.path.append('/data/owncloud/MinCutForDistance/pysurfrec/build/python')
+        if os.path.exists('/data/owncloud/MinCutForDistance/pysurfrec/build/python'):
+            sys.path.append('/data/owncloud/MinCutForDistance/pysurfrec/build/python')
         import surfrec
             
     except ImportError, e:

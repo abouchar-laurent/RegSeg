@@ -116,7 +116,7 @@ print "solving second"
 
 print "Total Cost basic ILP:", sum([w[v] for v,w in zip(value.flatten(),wf)])
 print "Total Cost ILP without non-0 minima:", sum([w[v] for v,w in zip(value_m.flatten(),wf)])
-print "Total Cost basic Min-Cut:", sum([w[v] for v,w in zip(value2.flatten(),wf)])
+#print "Total Cost basic Min-Cut:", sum([w[v] for v,w in zip(value2.flatten(),wf)])
 
 
 evaluate.compare_scores(ground_truth_distance, [value, value_m], ['ILP','ILP with minima at 0 only'])
