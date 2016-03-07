@@ -25,7 +25,9 @@ ROOT_PATH = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(ROOT_PATH,'src','python'))
 sys.path.append(os.path.join('/data/owncloud/MinCutForDistance','pysurfrec','build','python'))
 import surface_reconstruction as sr
+import results_evaluation as evaluate
 reload(sr)
+reload(evaluate)
 MAX_DIST =  None
 # Maximal distance in the image. Each pixel/voxel is mapped to this many nodes 
 # in the final graph. If None, the maximal distance is determined based on the
@@ -33,7 +35,7 @@ MAX_DIST =  None
 
 
 KINK = True
-WIGGLE = False
+WIGGLE = True
 # Type of artificial data generated. 
 # If WIGGLE is True, a wiggly line is randomly generated from top to bottom.
 # If WIGGLE is False and KINK is True, a line with a 90 degrees angle is used.
@@ -49,11 +51,11 @@ WIGGLE = False
 
 # 1 - Generate some noisy distance data
 
-max_dist = MAX_DIST if MAX_DIST != None else 12
+max_dist = MAX_DIST if MAX_DIST != None else 15
 column_height = max_dist + 1
 
 ## 1.a - Generate data
-shape = [150,150]
+shape = [48,48]
 half_width = int(0.5*(shape[0]-1))
 if WIGGLE:
     ground_truth = np.zeros(shape,np.bool)
@@ -76,17 +78,23 @@ else:
         ground_truth[half_width,:half_width] = 1
         ground_truth[half_width:,half_width] = 1
 
-ground_truth_distance = ni.morphology.distance_transform_edt(np.invert(ground_truth))
+ground_truth_distance = np.minimum(np.maximum(np.round(ni.morphology.distance_transform_edt(np.invert(ground_truth))),0),max_dist)
 
+ground_truth_distance = np.ones((3,3))*3.
+ground_truth_distance[1,1] = 2.
 
 ## 1.b - Add noise
 
 np.random.seed(555)
-noise_amplitude = 3
+noise_amplitude = 12
 #~ noise = np.random.randint(-noise_amplitude,noise_amplitude+1,shape) # Uniformly distributed noise in [-noise_amplitude, noise_amplitude]
 noise = np.random.randn(shape[0],shape[1])*noise_amplitude # Gaussian noise ~ N(0,noise_amplitude)
 
-noisy_distance = np.minimum(np.maximum(ground_truth_distance+noise,0),max_dist)
+#~ noisy_distance = np.minimum(np.maximum(ground_truth_distance+noise,0),max_dist)
+noisy_distance = ground_truth_distance
+max_dist = 3
+shape = [3,3]
+column_height = max_dist+1
 
 #print " ".join([str(n) for n in noisy_distance])
 ## 2.a - Set weights
@@ -95,18 +103,34 @@ slice_ = [slice(None) for _ in range(len(noisy_distance.shape))] + [np.newaxis]
 print augmented_shape, column_height, slice_
 weights = np.abs(np.ones(augmented_shape)*range(column_height) - noisy_distance[slice_])
 #print weights
-value = sr.solve_via_ILP(weights, max_gradient=1)
+
+
+value_m = sr.solve_via_ILP(weights, max_gradient=1, enforce_minimum=True)
+value = sr.solve_via_ILP(weights, max_gradient=1, enforce_minimum=False)
 wf = weights.reshape(np.prod(shape),column_height)
-print sum([w[v] for v,w in zip(value.flatten(),wf)])
+
 print "solving second"
 value2 = sr.reconstruct_surface(noisy_distance,'/data/dump/tmp0.txt','/data/dump/tmp1.txt',os.path.join(ROOT_PATH,'src','cpp','graph_cut_Linux'),max_dist=max_dist,cost_fun='linear',overwrite=True,verbose=True)
-print sum([w[v] for v,w in zip(value2.flatten(),wf)])
+
+
+
+print "Total Cost basic ILP:", sum([w[v] for v,w in zip(value.flatten(),wf)])
+print "Total Cost ILP without non-0 minima:", sum([w[v] for v,w in zip(value_m.flatten(),wf)])
+print "Total Cost basic Min-Cut:", sum([w[v] for v,w in zip(value2.flatten(),wf)])
+
+
+evaluate.compare_scores(ground_truth_distance, [value, value_m, value2], ['ILP','ILP with minima at 0 only','MinCut'])
+
+
 pl.subplot(2,3,1)
 pl.imshow(ground_truth_distance,vmin=0,vmax=max_dist,interpolation='nearest')
 pl.title('Ground Truth')
 pl.subplot(2,3,2)
 pl.imshow(noisy_distance,vmin=0,vmax=max_dist,interpolation='nearest')
 pl.title('Noisy Distance')
+pl.subplot(2,3,3)
+pl.imshow(value_m,vmin=0,vmax=max_dist,interpolation='nearest')
+pl.title('ILP minima at 0 only')
 pl.subplot(2,3,4)
 pl.imshow(value,vmin=0,vmax=max_dist,interpolation='nearest')
 pl.title('ILP estimation')

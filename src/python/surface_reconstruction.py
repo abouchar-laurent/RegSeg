@@ -11,7 +11,7 @@ from subprocess import call, STDOUT
 import validate_distance_maps as vdm
 reload(vdm)
 
-def prepare_problem(distance_map, path_output, max_dist=None, sampling=None, overwrite=False, cost_fun='lin_clipped',clipping_dist=4):
+def prepare_problem(distance_map, path_output, max_dist=None, sampling=None, overwrite=False, cost_fun='lin_clipped',clipping_dist=4, binaries=None):
     '''
     # Parameters
     ============
@@ -61,6 +61,9 @@ def prepare_problem(distance_map, path_output, max_dist=None, sampling=None, ove
     
         
     '''
+    
+    
+    
     shape = list(np.shape(distance_map))
     
     n_dims = len(shape)
@@ -161,17 +164,37 @@ def prepare_problem(distance_map, path_output, max_dist=None, sampling=None, ove
  
         ### Write terminal edge weights into the file.
         
-        weights = compute_weights(distance_map, max_dist, cost_fun=cost_fun, clipping_dist=clipping_dist)
+        weights = compute_unaries(distance_map, max_dist, cost_fun=cost_fun, clipping_dist=clipping_dist)
         
         
         # Weights between source/sink and nodes are determined based on the cost for selecting a node.
-        slice_ = [slice(None) for _ in range(n_dims)] + [slice(0,1)]
+        if return_2D:
+            slice_ = [slice(None) for _ in range(n_dims-1)] + [slice(0,1)]
+        else:
+            slice_ = [slice(None) for _ in range(n_dims)] + [slice(0,1)]
         weights_diff = np.concatenate((weights[slice_], np.diff(weights,axis=-1)), axis=-1)
         #print weights_diff
-        f_out.write("# weights list\n")
+        f_out.write("# unaries list\n")
         f_out.write(" ".join([str(el) for el in weights_diff.ravel()]))
         f_out.write("\n#\n")
             
+        if not (binaries is None):
+            
+            if type(binaries) == np.ndarray:
+                
+                assert all(np.array(binaries.shape) == list(weights.shape) + column_height)
+                
+            elif isinstance(binaries, str):
+                
+                binaries = compute_binaries(distance_map, column_height, cost_fun=binaries)
+                
+            else:
+                
+                raise Exception('Could not understand "binaries" parameter.')
+            
+            f_out.write("# binaries list\n")
+            f_out.write(" ".join([str(el) for el in binaries.ravel()]))
+            f_out.write("\n#\n")
             
             
 
@@ -180,7 +203,7 @@ def prepare_problem(distance_map, path_output, max_dist=None, sampling=None, ove
 
 
 
-def compute_weights(distance_map, max_dist, cost_fun='linear', clipping_dist=4):
+def compute_unaries(distance_map, max_dist, cost_fun='linear', clipping_dist=4):
     
     shape = distance_map.shape
     n_dims = len(shape)
@@ -567,12 +590,25 @@ def test(image, path_graph, path_output, C_prog, max_dist=None):
     pl.plot(sizes,times,'o')
 
 
-def solve_via_ILP(weights, max_gradient=1):
+
+
+
+
+
+
+
+
+def solve_via_ILP(weights, max_gradient=1, enforce_minimum=False, num_cores=None):
     try:
+        
+        sys.path.append('/data/owncloud/MinCutForDistance/pysurfrec/build/python')
         import surfrec
+            
     except ImportError, e:
         print "Module pysurfrec not found. Make sure you installed it correctly and that it is in your python path."
         raise e
+    
+    
     
     
     
@@ -583,6 +619,9 @@ def solve_via_ILP(weights, max_gradient=1):
     full_shape = weights.shape
     n_dims = len(shape)
     
+    if isinstance(max_gradient,int):
+        max_gradient = [max_gradient for _ in range(n_dims)]
+    
     num_nodes = int(np.prod(shape))
     num_edges = int(sum([np.prod(shape[:i])*np.prod(shape[i+1:])*(shape[i]-1) for i in range(n_dims) ]))
 
@@ -590,7 +629,17 @@ def solve_via_ILP(weights, max_gradient=1):
 
     # "Instantiating solver"
     print "Max gradient:", max_gradient
-    s = surfrec.IlpSolver(num_nodes, num_nodes - 1, num_levels, max_gradient)
+    s = surfrec.IlpSolver(num_nodes, num_nodes - 1, num_levels, max_gradient[0])
+
+    p = surfrec.IlpSolverParameters()
+    p.enforce_zero_minumum = enforce_minimum
+    if not num_cores is None:
+        p.num_threads = num_cores
+        
+
+
+
+
 
     #print "Adding nodes"
     first = s.add_nodes(num_nodes)
@@ -607,7 +656,7 @@ def solve_via_ILP(weights, max_gradient=1):
             if all(neigh < shape) and all(neigh >= 0):
                 i_neigh = np.ravel_multi_index(neigh,shape)
                 #print str(i) + ": Linking level " + str(coords) + " to " +str(neigh) + "."
-                s.add_edge(nodes[coords], nodes[tuple(neigh)])
+                s.add_edge(nodes[coords], nodes[tuple(neigh)], max_gradient[dim])
                 
                 
     print "Adding level costs for the " + str(num_nodes) + " nodes."
@@ -618,44 +667,11 @@ def solve_via_ILP(weights, max_gradient=1):
             costs[j] = weights[tuple(coords + [j])];
         s.set_level_costs(nodes[tuple(coords)], costs);
 
-        #~ coords = np.unravel_index(i,full_shape)
-        #~ height = coords[-1]
-        #~ if height == 0:
-            #~ for dim in range(n_dims):
-                #~ neigh = coords + np.array([1 if i == dim else 0 for i in range(n_dims)] + [height])
-                #~ if all(neigh < full_shape) and all(neigh > 0):
-                    #~ i_neigh = np.ravel_multi_index(neigh,full_shape)
-                    #~ s.add_edge(nodes[coords], nodes[neigh])
-                #~ neigh = coords + np.array([-1 if i == dim else 0 for i in range(n_dims)] + [height])
-                #~ if all(neigh < full_shape) and all(neigh > 0):
-                    #~ i_neigh = np.ravel_multi_index(neigh,full_shape)
-                    #~ s.add_edge(nodes[coords], nodes[neigh])
-        #~ else:
-            #~ for dim in range(n_dims):
-                #~ neigh = coords + np.array([1 if i == dim else 0 for i in range(n_dims)] + [height-1])
-                #~ if all(neigh < full_shape) and all(neigh > 0):
-                    #~ i_neigh = np.ravel_multi_index(neigh,full_shape)
-                    #~ s.add_edge(nodes[coords], nodes[neigh])
-                #~ neigh = coords + np.array([-1 if i == dim else 0 for i in range(n_dims)] + [height-1])
-                #~ if all(neigh < full_shape) and all(neigh > 0):
-                    #~ i_neigh = np.ravel_multi_index(neigh,full_shape)
-                    #~ s.add_edge(nodes[coords], nodes[neigh])
-            #~ neigh = coords + np.array([0 for _ in range(n_dims)] + [height-1])
-            #~ i_neigh = np.ravel_multi_index(neigh,full_shape)    
-            #~ s.add_edge(nodes[coords], nodes[neigh])
 
-    #~ print "Adding level costs"
-    #~ weights.reshape(num_nodes,num_levels)
-    #~ for i in range(num_nodes):
-        #~ coords = np.unravel_index(i,full_shape)
-        #~ costs = surfrec.ColumnCosts(num_levels)
-        #~ for j in range(num_levels):
-            #~ costs[j] = weights[i,j];
-        #~ s.set_level_costs(nodes[coords], costs);
 
     print "Solving"
     t0 = time()
-    value = s.min_surface()
+    value = s.min_surface(p)
     print "Solution found in", time()-t0, "seconds."
 
 
